@@ -1,0 +1,165 @@
+---
+title: "Prédiction des ventes en fonction des dépenses publicitaires"
+author: "Siwar"
+date: "`r Sys.Date()`"
+output:
+  html_document:
+    toc: true
+    toc_depth: 3
+    number_sections: true
+    theme: flatly
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE, message = FALSE, warning = FALSE,
+                      fig.align = "center", fig.width = 7, fig.height = 4.5)
+```
+
+# Introduction
+
+Ce projet a pour objectif de **prédire les ventes d'un produit** en fonction
+des dépenses publicitaires effectuées sur trois canaux : **YouTube**,
+**Facebook** et **Newspaper**.
+
+Nous utilisons le jeu de données `marketing` du package **datarium**,
+qui contient 200 observations et 4 variables (en milliers de dollars).
+
+# Importation et exploration des données
+
+```{r packages}
+library(tidyverse)
+library(datarium)
+library(lmtest)
+library(car)
+library(GGally)
+
+data("marketing")
+glimpse(marketing)
+summary(marketing)
+```
+
+## Visualisation
+
+```{r explo, fig.width=8, fig.height=6}
+ggpairs(marketing, title = "Relations entre variables")
+```
+
+```{r corr}
+round(cor(marketing), 3)
+```
+
+On observe une **forte corrélation positive** entre `youtube` et `sales`,
+une corrélation modérée pour `facebook`, et une corrélation faible pour
+`newspaper`.
+
+# Régression linéaire multiple
+
+Modèle : $sales = \beta_0 + \beta_1 \cdot youtube + \beta_2 \cdot facebook + \beta_3 \cdot newspaper + \varepsilon$
+
+```{r reg1}
+reg1 <- lm(sales ~ youtube + facebook + newspaper, data = marketing)
+summary(reg1)
+```
+
+# Test de significativité globale (F-test)
+
+- $H_0 : \beta_{youtube} = \beta_{facebook} = \beta_{newspaper} = 0$
+- $H_1 :$ au moins un coefficient est non nul
+
+```{r ftest}
+f_stat <- summary(reg1)$fstatistic
+p_global <- pf(f_stat[1], f_stat[2], f_stat[3], lower.tail = FALSE)
+cat("F =", round(f_stat[1], 2), " p-value =", format.pval(p_global))
+```
+
+La p-value étant très inférieure à 0.05, on **rejette $H_0$** : le modèle est
+globalement significatif.
+
+# Analyse des coefficients (t-tests)
+
+```{r coefs}
+round(coef(summary(reg1)), 4)
+confint(reg1)
+```
+
+`youtube` et `facebook` sont **significatifs** (p < 0.001).
+`newspaper` n'est **pas significatif** (p > 0.05) : on peut envisager de
+retirer cette variable.
+
+```{r reg2}
+reg2 <- lm(sales ~ youtube + facebook, data = marketing)
+summary(reg2)
+anova(reg2, reg1)
+```
+
+L'ANOVA confirme que retirer `newspaper` ne dégrade pas significativement
+le modèle.
+
+# Vérification des hypothèses MCO
+
+```{r diag, fig.width=8, fig.height=6}
+par(mfrow = c(2, 2))
+plot(reg2)
+```
+
+## Normalité des résidus
+
+```{r shapiro}
+shapiro.test(residuals(reg2))
+```
+
+## Homoscédasticité
+
+```{r bp}
+bptest(reg2)
+```
+
+## Indépendance des résidus
+
+```{r dw}
+dwtest(reg2)
+```
+
+## Multicolinéarité
+
+```{r vif}
+vif(reg2)
+```
+
+Les VIF sont proches de 1 : **aucun problème de multicolinéarité**.
+
+# Évaluation et comparaison des modèles
+
+```{r comp}
+data.frame(
+  Modele    = c("reg1 (3 variables)", "reg2 (sans newspaper)"),
+  R2        = c(summary(reg1)$r.squared,     summary(reg2)$r.squared),
+  R2_ajuste = c(summary(reg1)$adj.r.squared, summary(reg2)$adj.r.squared),
+  AIC       = c(AIC(reg1), AIC(reg2)),
+  BIC       = c(BIC(reg1), BIC(reg2))
+)
+```
+
+Le modèle `reg2` (sans `newspaper`) présente un **AIC/BIC plus faible**
+et un $R^2$ ajusté équivalent : c'est le **meilleur modèle**.
+
+# Prédiction
+
+```{r pred}
+nouveaux <- data.frame(youtube = c(100, 200, 300),
+                       facebook = c(20, 30, 40))
+predict(reg2, newdata = nouveaux, interval = "confidence")
+```
+
+# Conclusion business
+
+- **YouTube** et **Facebook** sont les leviers publicitaires les plus
+  efficaces ; **Newspaper** n'a pas d'effet significatif.
+- Pour 1 000 \$ supplémentaires :
+    - YouTube  → +`r round(coef(reg2)["youtube"]*1000, 2)` unités de ventes
+    - Facebook → +`r round(coef(reg2)["facebook"]*1000, 2)` unités de ventes
+- **Recommandation** : réallouer le budget Newspaper vers Facebook
+  (ROI marginal le plus élevé) puis YouTube.
+- **Limites** : pas d'effets d'interaction modélisés, échantillon de
+  200 observations, pas de dimension temporelle ni de variables externes
+  (saisonnalité, prix, concurrence).
