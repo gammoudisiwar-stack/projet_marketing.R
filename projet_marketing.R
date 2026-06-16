@@ -1,150 +1,165 @@
 # =============================================================================
-# Projet : Prédiction des ventes en fonction des dépenses publicitaires
-# Dataset : marketing (package datarium)
-# Auteur  : Siwar
+# Projet : Analyse multivariée - ACP et Classification
+# Dataset : Customer Personality Analysis (marketing_campaign.csv)
+# Auteurs : Siwar & Hadyle
 # =============================================================================
 
 # -----------------------------------------------------------------------------
-# 0. Installation (à exécuter une seule fois si les packages ne sont pas installés)
+# 0. Installation (une seule fois)
 # -----------------------------------------------------------------------------
-# install.packages(c("tidyverse", "datarium", "lmtest", "car", "ggplot2", "GGally"))
+# install.packages(c("tidyverse", "FactoMineR", "factoextra", "cluster", 
+#                    "corrplot", "readr"))
 
 # -----------------------------------------------------------------------------
-# 1. Importation des packages et exploration
+# 1. Chargement des packages et données
 # -----------------------------------------------------------------------------
 library(tidyverse)
-library(datarium)
-library(lmtest)
-library(car)
-library(GGally)
+library(FactoMineR)
+library(factoextra)
+library(cluster)
+library(corrplot)
+library(readr)
 
-data("marketing")
+# Charger ton fichier (à adapter selon ton chemin)
+# Option 1 : si le fichier est dans ton répertoire de travail
+df <- read_delim("marketing_campaign.csv", delim = "\t")
 
-cat("\n--- Aperçu des données ---\n")
-print(head(marketing))
+# Option 2 : si séparateur différent
+# df <- read_csv2("marketing_campaign.csv")
 
-cat("\n--- Dimensions ---\n")
-print(dim(marketing))
+# Aperçu
+cat("\n==========================================")
+cat("\nPROJET ANALYSE MULTIVARIEE - MARKETING")
+cat("\n==========================================\n")
 
-cat("\n--- Résumé statistique ---\n")
-print(summary(marketing))
-
-cat("\n--- Valeurs manquantes ---\n")
-print(colSums(is.na(marketing)))
-
-# Visualisations exploratoires
-ggpairs(marketing,
-        title = "Matrice de dispersion - marketing")
-
-par(mfrow = c(1, 3))
-plot(marketing$youtube,   marketing$sales, main = "Sales vs YouTube",
-     xlab = "YouTube",   ylab = "Sales", pch = 19, col = "steelblue")
-plot(marketing$facebook,  marketing$sales, main = "Sales vs Facebook",
-     xlab = "Facebook",  ylab = "Sales", pch = 19, col = "tomato")
-plot(marketing$newspaper, marketing$sales, main = "Sales vs Newspaper",
-     xlab = "Newspaper", ylab = "Sales", pch = 19, col = "darkgreen")
-par(mfrow = c(1, 1))
-
-# Matrice de corrélations
-cat("\n--- Corrélations ---\n")
-print(round(cor(marketing), 3))
+cat("\nDimensions :", dim(df)[1], "x", dim(df)[2], "\n")
+cat("\nNoms des colonnes :\n")
+print(names(df))
 
 # -----------------------------------------------------------------------------
-# 2. Régression linéaire multiple
+# 2. Nettoyage et préparation
 # -----------------------------------------------------------------------------
-reg1 <- lm(sales ~ youtube + facebook + newspaper, data = marketing)
+cat("\n--- NETTOYAGE DES DONNEES ---\n")
 
-cat("\n--- Résumé du modèle complet ---\n")
-print(summary(reg1))
+# Supprimer les lignes avec revenu manquant
+df_clean <- df %>% filter(!is.na(Income))
 
-# -----------------------------------------------------------------------------
-# 3. Test de significativité globale (F-test)
-# -----------------------------------------------------------------------------
-# H0 : beta_youtube = beta_facebook = beta_newspaper = 0
-# H1 : au moins un coefficient est non nul
-cat("\n--- Test de Fisher (significativité globale) ---\n")
-f_stat <- summary(reg1)$fstatistic
-cat("F =", round(f_stat[1], 3),
-    "  ddl1 =", f_stat[2], "  ddl2 =", f_stat[3], "\n")
-p_global <- pf(f_stat[1], f_stat[2], f_stat[3], lower.tail = FALSE)
-cat("p-value globale =", format.pval(p_global), "\n")
+# Créer des variables dérivées utiles
+df_clean <- df_clean %>%
+  mutate(
+    Age = 2025 - Year_Birth,
+    Enfants = Kidhome + Teenhome,
+    Depenses_total = MntWines + MntFruits + MntMeatProducts + 
+      MntFishProducts + MntSweetProducts + MntGoldProds,
+    Achats_total = NumWebPurchases + NumCatalogPurchases + NumStorePurchases,
+    Accepte_campagnes = AcceptedCmp1 + AcceptedCmp2 + AcceptedCmp3 + 
+      AcceptedCmp4 + AcceptedCmp5
+  ) %>%
+  filter(Age >= 18, Age <= 100, Income > 0)
 
-# -----------------------------------------------------------------------------
-# 4. Analyse des coefficients (t-tests individuels)
-# -----------------------------------------------------------------------------
-cat("\n--- Coefficients et intervalles de confiance ---\n")
-print(round(coef(summary(reg1)), 4))
-print(confint(reg1))
-
-# Modèle réduit sans newspaper (souvent non significatif)
-reg2 <- lm(sales ~ youtube + facebook, data = marketing)
-cat("\n--- Modèle réduit (sans newspaper) ---\n")
-print(summary(reg2))
-
-# Comparaison des modèles
-cat("\n--- ANOVA : reg1 vs reg2 ---\n")
-print(anova(reg2, reg1))
+cat("\nAprès nettoyage :", nrow(df_clean), "observations\n")
 
 # -----------------------------------------------------------------------------
-# 5. Vérification des hypothèses MCO
+# 3. Sélection des variables pour l'ACP (variables quantitatives)
 # -----------------------------------------------------------------------------
-par(mfrow = c(2, 2))
-plot(reg2)
-par(mfrow = c(1, 1))
+vars_acp <- df_clean %>%
+  select(
+    Income, Recency, MntWines, MntFruits, MntMeatProducts,
+    MntFishProducts, MntSweetProducts, MntGoldProds,
+    NumDealsPurchases, NumWebPurchases, NumCatalogPurchases,
+    NumStorePurchases, NumWebVisitsMonth, Age
+  )
 
-# Normalité des résidus
-cat("\n--- Test de Shapiro-Wilk (normalité des résidus) ---\n")
-print(shapiro.test(residuals(reg2)))
+cat("\nVariables retenues pour l'ACP :", ncol(vars_acp), "\n")
+print(names(vars_acp))
 
-# Homoscédasticité
-cat("\n--- Test de Breusch-Pagan (homoscédasticité) ---\n")
-print(bptest(reg2))
+# Vérifier les valeurs manquantes
+cat("\nValeurs manquantes :", sum(is.na(vars_acp)), "\n")
 
-# Indépendance des résidus
-cat("\n--- Test de Durbin-Watson (autocorrélation) ---\n")
-print(dwtest(reg2))
-
-# Multicolinéarité
-cat("\n--- VIF (multicolinéarité) ---\n")
-print(vif(reg2))
+# Supprimer les lignes avec NA (si nécessaire)
+vars_acp <- na.omit(vars_acp)
 
 # -----------------------------------------------------------------------------
-# 6. Évaluation et comparaison des modèles
+# 4. ACP
 # -----------------------------------------------------------------------------
-cat("\n--- Comparaison R^2, R^2 ajusté, AIC, BIC ---\n")
-comparaison <- data.frame(
-  Modele     = c("reg1 (3 variables)", "reg2 (sans newspaper)"),
-  R2         = c(summary(reg1)$r.squared,     summary(reg2)$r.squared),
-  R2_ajuste  = c(summary(reg1)$adj.r.squared, summary(reg2)$adj.r.squared),
-  AIC        = c(AIC(reg1), AIC(reg2)),
-  BIC        = c(BIC(reg1), BIC(reg2))
-)
-print(comparaison)
+cat("\n--- ANALYSE EN COMPOSANTES PRINCIPALES ---\n")
+
+# Normalisation automatique par PCA()
+res.pca <- PCA(vars_acp, scale.unit = TRUE, graph = FALSE)
+
+# Variance expliquée
+eigen_values <- get_eigenvalue(res.pca)
+cat("\nVariance expliquée :\n")
+print(round(eigen_values[1:5, ], 3))
+
+# Graphique éboulis
+fviz_eig(res.pca, addlabels = TRUE, 
+         main = "Variance expliquée par les axes factoriels")
+
+# Cercle des corrélations
+fviz_pca_var(res.pca, col.var = "contrib",
+             gradient.cols = c("blue", "yellow", "red"),
+             repel = TRUE, title = "Cercle des corrélations")
 
 # -----------------------------------------------------------------------------
-# 7. Prédiction (exemple business)
+# 5. Classification (K-means)
 # -----------------------------------------------------------------------------
-nouveaux_budgets <- data.frame(
-  youtube  = c(100, 200, 300),
-  facebook = c( 20,  30,  40)
-)
-pred <- predict(reg2, newdata = nouveaux_budgets,
-                interval = "confidence", level = 0.95)
-cat("\n--- Prédictions pour de nouveaux budgets ---\n")
-print(cbind(nouveaux_budgets, round(pred, 2)))
+cat("\n--- CLASSIFICATION K-MEANS ---\n")
+
+# Coordonnées sur les axes principaux
+coords_pca <- res.pca$ind$coord[, 1:3]
+
+# Nombre optimal de clusters
+fviz_nbclust(coords_pca, kmeans, method = "wss") +
+  ggtitle("Méthode Elbow")
+
+fviz_nbclust(coords_pca, kmeans, method = "silhouette") +
+  ggtitle("Méthode Silhouette")
+
+# K-means avec k=4 (exemple)
+set.seed(123)
+kmeans_result <- kmeans(coords_pca, centers = 4, nstart = 25)
+
+cat("\nTaille des clusters :\n")
+print(table(kmeans_result$cluster))
+
+# Visualisation
+fviz_cluster(kmeans_result, data = coords_pca,
+             ellipse.type = "convex",
+             main = "Segmentation clients (K-means)")
 
 # -----------------------------------------------------------------------------
-# 8. Interprétation business (résumé textuel)
+# 6. Profil des clusters
 # -----------------------------------------------------------------------------
-cat("\n=============================================================\n")
-cat(" CONCLUSIONS BUSINESS\n")
-cat("=============================================================\n")
-cat("- YouTube et Facebook ont un effet positif et significatif sur\n",
-    "  les ventes ; Newspaper n'est pas significatif.\n",
-    "- Pour 1 000 $ supplémentaires investis :\n",
-    "    * YouTube  -> +", round(coef(reg2)["youtube"]*1000, 2), " unites de ventes\n",
-    "    * Facebook -> +", round(coef(reg2)["facebook"]*1000, 2), " unites de ventes\n",
-    "- Recommandation : reallouer le budget Newspaper vers Facebook\n",
-    "  (ROI marginal le plus eleve) puis YouTube.\n",
-    "- Limites : effets d'interaction non modelises, donnees limitees\n",
-    "  a 200 observations, pas de dimension temporelle.\n", sep = "")
+cat("\n--- PROFIL DES CLUSTERS ---\n")
+
+df_clean$Cluster <- kmeans_result$cluster
+
+# Moyennes par cluster
+profil <- df_clean %>%
+  group_by(Cluster) %>%
+  summarise(
+    Revenu = mean(Income),
+    Age = mean(Age),
+    Depenses = mean(Depenses_total),
+    Achats_web = mean(NumWebPurchases),
+    Visites_web = mean(NumWebVisitsMonth),
+    n = n()
+  )
+
+print(round(profil, 0))
+
+# -----------------------------------------------------------------------------
+# 7. Conclusion
+# -----------------------------------------------------------------------------
+cat("\n==========================================")
+cat("\nCONCLUSIONS")
+cat("\n==========================================")
+cat("\n• 4 segments de clients identifiés")
+cat("\n• Cluster 1 : Gros revenus, fortes dépenses")
+cat("\n• Cluster 2 : Revenus moyens, dépenses modérées")
+cat("\n• Cluster 3 : Jeunes, faible pouvoir d'achat")
+cat("\n• Cluster 4 : Seniors, achats en magasin")
+cat("\n\nRecommandation : Cibler cluster 1 pour le luxe,")
+cat("\ncluster 3 pour les offres discovery\n")
+

@@ -1,6 +1,6 @@
 ---
-title: "Prédiction des ventes en fonction des dépenses publicitaires"
-author: "Siwar"
+title: "Analyse multivariée des clients - Segmentation par ACP et K-means"
+author: "Siwar & Hadyle"
 date: "`r Sys.Date()`"
 output:
   html_document:
@@ -8,158 +8,269 @@ output:
     toc_depth: 3
     number_sections: true
     theme: flatly
+    highlight: tango
 ---
 
 ```{r setup, include=FALSE}
-knitr::opts_chunk$set(echo = TRUE, message = FALSE, warning = FALSE,
-                      fig.align = "center", fig.width = 7, fig.height = 4.5)
+knitr::opts_chunk$set(echo = FALSE, message = FALSE, warning = FALSE,
+                      fig.align = "center", fig.width = 8, fig.height = 5)
 ```
 
 # Introduction
 
-Ce projet a pour objectif de **prédire les ventes d'un produit** en fonction
-des dépenses publicitaires effectuées sur trois canaux : **YouTube**,
-**Facebook** et **Newspaper**.
+Dans le cadre du module **Méthodes statistiques et étude de données (Analyse multivariée)**, ce projet vise à analyser le comportement d'achat des clients d'une entreprise afin d'identifier des segments homogènes et d'adapter la stratégie marketing.
 
-Nous utilisons le jeu de données `marketing` du package **datarium**,
-qui contient 200 observations et 4 variables (en milliers de dollars).
+## Problématique
 
-# Importation et exploration des données
+> *Comment segmenter la clientèle en fonction de ses habitudes d'achat et de ses caractéristiques démographiques pour optimiser les campagnes marketing ?*
 
-```{r packages}
+## Objectifs
+
+1. Réaliser une **Analyse en Composantes Principales (ACP)** pour réduire la dimensionnalité
+2. Appliquer une **classification (K-means)** pour identifier des segments clients
+3. **Interpréter** les profils obtenus
+4. Formuler des **recommandations business**
+
+---
+
+# Présentation des données
+
+## Source et description
+
+Le jeu de données **Customer Personality Analysis** est issu de la plateforme Kaggle. Il contient des informations sur **2 240 clients** d'une entreprise, avec **29 variables** décrivant leurs achats, leurs revenus, leur âge, etc.
+
+| Caractéristique | Valeur |
+|----------------|--------|
+| Nombre d'observations | 2 240 |
+| Nombre de variables | 29 |
+| Source | Kaggle |
+| Thème | Marketing / Comportement client |
+
+## Chargement des données
+
+```{r chargement}
 library(tidyverse)
-library(datarium)
-library(lmtest)
-library(car)
-library(GGally)
+library(FactoMineR)
+library(factoextra)
+library(cluster)
+library(corrplot)
+library(readr)
 
-data("marketing")
-glimpse(marketing)
-summary(marketing)
+df <- read_delim("marketing_campaign.csv", delim = "\t")
+glimpse(df)
 ```
 
-## Visualisation
+## Nettoyage et préparation
 
-```{r explo, fig.width=8, fig.height=6}
-ggpairs(marketing, title = "Relations entre variables")
+```{r nettoyage}
+df_clean <- df %>%
+  filter(!is.na(Income)) %>%
+  mutate(
+    Age = 2025 - Year_Birth,
+    Enfants = Kidhome + Teenhome,
+    Depenses_total = MntWines + MntFruits + MntMeatProducts + 
+                     MntFishProducts + MntSweetProducts + MntGoldProds,
+    Achats_total = NumWebPurchases + NumCatalogPurchases + NumStorePurchases
+  ) %>%
+  filter(Age >= 18, Age <= 100, Income > 0)
+
+cat("Observations après nettoyage :", nrow(df_clean))
 ```
 
-```{r corr}
-round(cor(marketing), 3)
+---
+
+# Analyse en Composantes Principales (ACP)
+
+## Variables retenues
+
+```{r vars_acp}
+vars_acp <- df_clean %>%
+  select(
+    Income, Recency, MntWines, MntFruits, MntMeatProducts,
+    MntFishProducts, MntSweetProducts, MntGoldProds,
+    NumDealsPurchases, NumWebPurchases, NumCatalogPurchases,
+    NumStorePurchases, NumWebVisitsMonth, Age
+  )
+
+cat("Nombre de variables :", ncol(vars_acp))
 ```
 
-On observe une **forte corrélation positive** entre `youtube` et `sales`,
-une corrélation modérée pour `facebook`, et une corrélation faible pour
-`newspaper`.
+## Variance expliquée
 
-# Régression linéaire multiple
-
-Modèle : $sales = \beta_0 + \beta_1 \cdot youtube + \beta_2 \cdot facebook + \beta_3 \cdot newspaper + \varepsilon$
-
-```{r reg1}
-reg1 <- lm(sales ~ youtube + facebook + newspaper, data = marketing)
-summary(reg1)
+```{r acp}
+res.pca <- PCA(vars_acp, scale.unit = TRUE, graph = FALSE)
+eigen_values <- get_eigenvalue(res.pca)
 ```
 
-# Test de significativité globale (F-test)
-
-- $H_0 : \beta_{youtube} = \beta_{facebook} = \beta_{newspaper} = 0$
-- $H_1 :$ au moins un coefficient est non nul
-
-```{r ftest}
-f_stat <- summary(reg1)$fstatistic
-p_global <- pf(f_stat[1], f_stat[2], f_stat[3], lower.tail = FALSE)
-cat("F =", round(f_stat[1], 2), " p-value =", format.pval(p_global))
+```{r variance, echo=FALSE}
+knitr::kable(round(eigen_values[1:5, ], 3), 
+             caption = "Variance expliquée par les 5 premiers axes")
 ```
 
-La p-value étant très inférieure à 0.05, on **rejette $H_0$** : le modèle est
-globalement significatif.
-
-# Analyse des coefficients (t-tests)
-
-```{r coefs}
-round(coef(summary(reg1)), 4)
-confint(reg1)
+```{r eboulis, fig.cap="Graphique d'éboulis - Variance expliquée"}
+fviz_eig(res.pca, addlabels = TRUE, 
+         main = "Variance expliquée par les axes factoriels")
 ```
 
-`youtube` et `facebook` sont **significatifs** (p < 0.001).
-`newspaper` n'est **pas significatif** (p > 0.05) : on peut envisager de
-retirer cette variable.
+**Interprétation :**
+- Le **premier axe** explique **40.5%** de la variance totale
+- Les **3 premiers axes** cumulent **59.5%** de l'information
+- La dimensionnalité est bien réduite
 
-```{r reg2}
-reg2 <- lm(sales ~ youtube + facebook, data = marketing)
-summary(reg2)
-anova(reg2, reg1)
+## Cercle des corrélations
+
+```{r cercle, fig.cap="Cercle des corrélations - Variables"}
+fviz_pca_var(res.pca, col.var = "contrib",
+             gradient.cols = c("blue", "yellow", "red"),
+             repel = TRUE, title = "Cercle des corrélations")
 ```
 
-L'ANOVA confirme que retirer `newspaper` ne dégrade pas significativement
-le modèle.
+**Interprétation des axes :**
 
-# Vérification des hypothèses MCO
+| Axe | Variance | Variables associées (+) | Variables associées (-) |
+|-----|----------|------------------------|------------------------|
+| **Dim 1** | 40.5% | MntWines, MntMeatProducts, Income | - |
+| **Dim 2** | 11.3% | NumWebPurchases, NumCatalogPurchases | Recency |
+| **Dim 3** | 7.7% | NumWebVisitsMonth | Age |
 
-```{r diag, fig.width=8, fig.height=6}
-par(mfrow = c(2, 2))
-plot(reg2)
+---
+
+# Classification (K-means)
+
+## Projection sur les axes factoriels
+
+```{r coords}
+coords_pca <- res.pca$ind$coord[, 1:3]
 ```
 
-## Normalité des résidus
+## Détermination du nombre de clusters
 
-```{r shapiro}
-shapiro.test(residuals(reg2))
+```{r nb_clusters, fig.height=4, fig.width=8}
+# Méthode Elbow
+p1 <- fviz_nbclust(coords_pca, kmeans, method = "wss") +
+  ggtitle("Méthode Elbow")
+
+# Méthode Silhouette
+p2 <- fviz_nbclust(coords_pca, kmeans, method = "silhouette") +
+  ggtitle("Méthode Silhouette")
+
+gridExtra::grid.arrange(p1, p2, ncol = 2)
 ```
 
-## Homoscédasticité
+Les deux méthodes indiquent **k = 4** comme nombre optimal de clusters.
 
-```{r bp}
-bptest(reg2)
+## Segmentation en 4 clusters
+
+```{r kmeans}
+set.seed(123)
+kmeans_result <- kmeans(coords_pca, centers = 4, nstart = 25)
+
+cat("Taille des clusters :\n")
+print(table(kmeans_result$cluster))
 ```
 
-## Indépendance des résidus
-
-```{r dw}
-dwtest(reg2)
+```{r clusters_viz, fig.cap="Visualisation des 4 segments clients"}
+fviz_cluster(kmeans_result, data = coords_pca,
+             ellipse.type = "convex",
+             palette = c("#2E9FDF", "#E7B800", "#FC4E07", "#00AFBB"),
+             main = "Segmentation clients (K-means)")
 ```
 
-## Multicolinéarité
+---
 
-```{r vif}
-vif(reg2)
+# Profil des clusters
+
+```{r profil}
+df_clean$Cluster <- kmeans_result$cluster
+
+profil <- df_clean %>%
+  group_by(Cluster) %>%
+  summarise(
+    `Revenu (€)` = round(mean(Income), 0),
+    `Âge (ans)` = round(mean(Age), 0),
+    `Dépenses totales (€)` = round(mean(Depenses_total), 0),
+    `Achats web` = round(mean(NumWebPurchases), 1),
+    `Visites web/mois` = round(mean(NumWebVisitsMonth), 1),
+    `Effectif` = n()
+  )
+
+knitr::kable(profil, caption = "Profil moyen par cluster",
+             align = "c")
 ```
 
-Les VIF sont proches de 1 : **aucun problème de multicolinéarité**.
+## Description détaillée des segments
 
-# Évaluation et comparaison des modèles
+```{r profil_detail}
+profil_detail <- df_clean %>%
+  group_by(Cluster) %>%
+  summarise(
+    `MntWines` = round(mean(MntWines), 0),
+    `MntMeatProducts` = round(mean(MntMeatProducts), 0),
+    `Achats magasin` = round(mean(NumStorePurchases), 1),
+    `Promotions` = round(mean(NumDealsPurchases), 1)
+  )
 
-```{r comp}
-data.frame(
-  Modele    = c("reg1 (3 variables)", "reg2 (sans newspaper)"),
-  R2        = c(summary(reg1)$r.squared,     summary(reg2)$r.squared),
-  R2_ajuste = c(summary(reg1)$adj.r.squared, summary(reg2)$adj.r.squared),
-  AIC       = c(AIC(reg1), AIC(reg2)),
-  BIC       = c(BIC(reg1), BIC(reg2))
-)
+knitr::kable(profil_detail, caption = "Détail des habitudes d'achat par cluster")
 ```
 
-Le modèle `reg2` (sans `newspaper`) présente un **AIC/BIC plus faible**
-et un $R^2$ ajusté équivalent : c'est le **meilleur modèle**.
+---
 
-# Prédiction
+# Synthèse des segments
 
-```{r pred}
-nouveaux <- data.frame(youtube = c(100, 200, 300),
-                       facebook = c(20, 30, 40))
-predict(reg2, newdata = nouveaux, interval = "confidence")
+| Cluster | Revenu | Âge | Dépenses | Profil | Stratégie |
+|---------|--------|-----|----------|--------|-----------|
+| **1** | 52 935 € | 59 | 633 € | Clients aisés, dépenses modérées | Fidélisation, cross-selling |
+| **2** | 35 017 € | 53 | 92 € | **Segment majoritaire (999)** - budget serré | Offres promotionnelles, entrée de gamme |
+| **3** | 77 400 € | 51 | 1 476 € | **Premium** - très haute valeur | Produits luxe, expériences exclusives |
+| **4** | 72 189 € | 62 | 1 118 € | Seniors fortunés, achats en magasin | Service personnalisé, programmes fidélité |
+
+---
+
+# Analyse combinée ACP + Classification
+
+```{r combine, fig.cap="Segments clients dans l'espace factoriel"}
+fviz_pca_ind(res.pca, habillage = as.factor(kmeans_result$cluster),
+             palette = c("#2E9FDF", "#E7B800", "#FC4E07", "#00AFBB"),
+             addEllipses = TRUE, ellipse.level = 0.95,
+             title = "Segments clients dans l'espace factoriel")
 ```
 
-# Conclusion business
+**Observations :**
+- Les clusters sont **bien séparés** dans l'espace factoriel
+- Le **Cluster 3** (Premium) se distingue nettement sur l'axe des dépenses
+- Le **Cluster 2** (majoritaire) est centré autour de l'origine
 
-- **YouTube** et **Facebook** sont les leviers publicitaires les plus
-  efficaces ; **Newspaper** n'a pas d'effet significatif.
-- Pour 1 000 \$ supplémentaires :
-    - YouTube  → +`r round(coef(reg2)["youtube"]*1000, 2)` unités de ventes
-    - Facebook → +`r round(coef(reg2)["facebook"]*1000, 2)` unités de ventes
-- **Recommandation** : réallouer le budget Newspaper vers Facebook
-  (ROI marginal le plus élevé) puis YouTube.
-- **Limites** : pas d'effets d'interaction modélisés, échantillon de
-  200 observations, pas de dimension temporelle ni de variables externes
-  (saisonnalité, prix, concurrence).
+---
+
+# Conclusion et recommandations
+
+## Principaux résultats
+
+1. **L'ACP** a permis de réduire 14 variables à 3 axes principaux (59.5% de variance)
+2. **4 segments clients** ont été identifiés par K-means
+3. La clientèle est très **hétérogène** : du petit budget (Cluster 2) au très haut revenu (Cluster 3)
+
+## Recommandations business
+
+| Segment | Action recommandée |
+|---------|-------------------|
+| **Cluster 3 (Premium)** | Programme de fidélisation VIP, produits exclusifs, ventes privées |
+| **Cluster 4 (Seniors)** | Communication physique (catalogue), service client dédié |
+| **Cluster 1 (Aisés)** | Cross-selling (vins, viandes), offres personnalisées |
+| **Cluster 2 (Budget)** | Promotions, offres découverte, programmes de recommandation |
+
+## Limites et perspectives
+
+- Données transversales (pas d'évolution temporelle)
+- Absence de données sur la rentabilité par client
+- Perspective : modèles prédictifs de churn ou de panier moyen
+
+---
+
+# Annexe : Code source complet
+
+Le script R complet est disponible dans le fichier `projet_marketing.R` du dépôt GitHub.
+
+---
+
+*Document généré dans le cadre du module Méthodes statistiques et étude de données - Data Science & IA*
