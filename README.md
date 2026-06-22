@@ -1,41 +1,71 @@
-# Projet Marketing — Régression linéaire multiple en R
+# Projet Marketing — Analyse multivariée en R
 
-Prédire les **ventes** d'un produit à partir des dépenses publicitaires
-(`youtube`, `facebook`, `newspaper`) — dataset `marketing` du package
-**datarium**.
+Ce projet a pour objectif de **segmenter des clients** à partir de leurs
+caractéristiques démographiques et de leurs habitudes d’achat, en appliquant
+des méthodes d’**analyse multivariée**.
 
-## Fichiers
+## Dataset utilisé
 
-- [projet_marketing.R](projet_marketing.R) — script R complet, exécutable de bout en bout.
-- [rapport_marketing.Rmd](rapport_marketing.Rmd) — rapport R Markdown (à knit en HTML/PDF).
+- **Nom** : Customer Personality Analysis
+- **Source** : Kaggle
+- **Nombre d’observations** : 2240
+- **Nombre de variables** : 29
+- **Thématique** : marketing / comportement client
 
-## Prérequis
+## Objectifs du projet
+
+- Comprendre la structure d’un jeu de données multidimensionnel
+- Réduire la dimensionnalité par **Analyse en Composantes Principales (ACP)**
+- Identifier des segments de clients par **classification K-means**
+- Interpréter les profils obtenus et proposer des recommandations business
+
+## Méthodologie suivie
+
+1. Compréhension du problème et présentation des données
+2. Nettoyage et préparation des données
+3. Sélection des variables quantitatives pertinentes
+4. Analyse en composantes principales (**ACP**)
+5. Classification non supervisée par **K-means**
+6. Analyse combinée ACP + segmentation
+7. Interprétation statistique et recommandations marketing
+
+## Fichiers du dépôt
+
+- `projet_marketing.R` : script R principal
+- `rapport_marketing.Rmd` : rapport R Markdown
+- `marketing_campaign.csv` : dataset utilisé
+- `.gitignore` : fichiers à ignorer dans Git
+
+## Packages utilisés
 
 ```r
-install.packages(c("tidyverse", "datarium", "lmtest", "car", "GGally"))
-# Pour le rapport :
-install.packages(c("rmarkdown", "knitr"))
+install.packages(c(
+  "tidyverse", "FactoMineR", "factoextra", "cluster",
+  "corrplot", "readr", "gridExtra", "rmarkdown", "knitr"
+))
 ```
 
 ## Exécution
 
-- Script :
-  ```r
-  source("projet_marketing.R")
-  ```
-- Rapport :
-  ```r
-  rmarkdown::render("rapport_marketing.Rmd")
-  ```
+Exécuter le script principal :
 
-## Plan suivi
+```r
+source("projet_marketing.R")
+```
 
-1. Importation et exploration (`summary`, corrélations, `ggpairs`)
-2. Régression multiple `lm(sales ~ youtube + facebook + newspaper)`
-3. Test de significativité globale (F-test)
-4. Analyse des coefficients (t-tests, IC, modèle réduit)
-5. Vérification des hypothèses MCO
-   (normalité Shapiro, homoscédasticité Breusch-Pagan, autocorrélation
-   Durbin-Watson, multicolinéarité VIF)
-6. Évaluation : R², R² ajusté, AIC, BIC, ANOVA
-7. Prédiction et interprétation business
+Générer le rapport :
+
+```r
+rmarkdown::render("rapport_marketing.Rmd")
+```
+
+## Résultats principaux
+
+- Réduction de dimension par ACP
+- Identification de **4 segments clients**
+- Visualisation des profils dans l’espace factoriel
+- Recommandations pour le ciblage commercial
+
+## Cadre pédagogique
+
+Ce projet a été réalisé dans le cadre du module **Méthodes statistiques et étude de données (Analyse multivariée)** du parcours **Ingénieur Data Science & IA**.
