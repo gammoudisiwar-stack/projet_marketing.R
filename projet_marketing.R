@@ -47,7 +47,7 @@ df_clean <- df %>% filter(!is.na(Income))
 # Créer des variables dérivées utiles
 df_clean <- df_clean %>%
   mutate(
-    Age = 2025 - Year_Birth,
+    Age = as.integer(format(Sys.Date(), "%Y")) - Year_Birth,
     Enfants = Kidhome + Teenhome,
     Depenses_total = MntWines + MntFruits + MntMeatProducts + 
       MntFishProducts + MntSweetProducts + MntGoldProds,
