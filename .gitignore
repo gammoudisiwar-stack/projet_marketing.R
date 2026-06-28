@@ -19,3 +19,13 @@
 # Système
 .DS_Store
 Thumbs.db
+
+# Fichiers générés
+Rplots.pdf
+run_output.log
+marketing
+archive.zip
+
+# Dossiers temporaires
+archive/
+version/
