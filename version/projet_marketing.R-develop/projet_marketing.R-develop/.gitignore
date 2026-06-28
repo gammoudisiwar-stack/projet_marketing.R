@@ -1,0 +1,21 @@
+# Fichiers de session R
+.RData
+.Rhistory
+.Rapp.history
+
+# Données utilisateur R
+.Ruserdata
+
+# Fichiers de sortie RStudio
+.Rproj.user/
+*.Rproj
+
+# Caches et sorties knitr / rmarkdown
+*_cache/
+*_files/
+*.utf8.md
+*.knit.md
+
+# Système
+.DS_Store
+Thumbs.db
